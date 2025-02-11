@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <cstring>
 
 #include "context.hpp"
 #include "exif.hpp"
@@ -55,16 +56,13 @@ Parsed arguments:
     }
 
     try {
-        for (const auto& dirEntry: recursive_directory_iterator(context.dir)) {
-            if (!dirEntry.is_regular_file()) continue;
-            ifstream stream(dirEntry.path());
-            File file(move(stream));
-            stream >> file;
-            auto exif = file.find();
-            if (!exif) continue;
-            cout << "File: " << dirEntry.path() << ':' << tab << exif << endl;
-            auto tiff = exif->tiff;
-            cerr << tiff << endl;
+        for (const auto& entry: recursive_directory_iterator(context.dir)) {
+            if (!entry.is_regular_file()) continue;
+            ifstream ifs(entry.path(), ios::binary | ios::ate);
+            if (!ifs) { cerr << "Could not open file: " << entry.path() << endl; continue; }
+            File file(entry.path());
+            file << ifs;
+            cerr << file << endl;
         }
     } catch (exception e) {
         cerr << "try running as root" << endl;
@@ -73,105 +71,60 @@ Parsed arguments:
     return 0;
 }
 
-istream& operator>>(istream& is, File& file)
+ostream& operator<<(ostream& os, const File& file)
 {
-    TAG tag; is >> tag;
-    if (tag != JPEG) { cerr << "Not JPEG file: " << hex << 'x' << tag << endl; return is; }
-    union {
-        uint16_t size;
-        struct {
-            uint8_t hsize;
-            uint8_t lsize;
-        };
-    } size;
-    is >> tag >> size.hsize >> size.lsize;
-    cerr << "Section: " << outpaix(tag, size.size) << endl;
-    if (tag != EXIF) { cerr << "Not EXIF\n"; return is; }
-    return is; 
-}
-
-Jpeg::operator bool() const { return tag == JPEG; }
-
-Tag::operator bool() const { return tag == EXIF; }
-
-const Tag* File::find()
-{
-    file.read(buffer.data(), buffer.size());
-    auto* jpeg = reinterpret_cast<const Jpeg*>(buffer.data());
-    if (!*jpeg) cerr << "NOT JPEG FILE" << endl;
-    uint64_t exifOffset = 0;
-    const Tag* exif = nullptr;
-    size_t size = offsetof(Jpeg, markers);
-    const auto* marker = jpeg->markers;
-    while ((marker->tag & 0xFF) == 0xFF) {
-        auto tagSize = littleEndian(marker->size);
-        auto tagOffset = (char*) marker - buffer.data();
-        size += sizeof(marker->tag) + tagSize + offsetof(Tag, size) + sizeof(marker->size);
-        size_t alloc = ((size - 1)/sector + 1) * sector;
-        int64_t more = alloc - buffer.size();
-        if (more > 0) {
-            auto old = buffer.size();
-            buffer.resize(alloc);
-            file.read(buffer.data() + old, more);
-            marker = reinterpret_cast<const Tag*>(buffer.data() + tagOffset);
-        }
-        if (*marker) exifOffset = tagOffset;
-        if (!marker->size) break;
-        // cerr << "Buffer size:" << outpaix(buffer.size(), size) << tab;
-        if (Context::verbose) cerr << marker << endl;
-        if (marker->tag == SOS) break;
-        marker = reinterpret_cast<const Tag*>((char*)marker + tagSize + offsetof(Tag, size));
-    }
-    if (exifOffset) exif = reinterpret_cast<const Tag*>(buffer.data() + exifOffset);
-    return exif;
-}
-
-ostream& operator<<(ostream& os, const Entry& entry)
-{
-    os << "tag: " << 'x' << hex << uppercase << entry.tag << tab
-        << "format: " << entry.format << tab
-        << "count: " << outvar(entry.count) << tab;
-    ldump(&entry, sizeof(Entry));
-        os << endl;
+    os << "File: " << file.name << tab;
+    if (file) os << "date: " << file.date << tab
+        << "time: " << file.time << tab
+            << "size: " << file.size - file.sos;
     return os;
 }
 
-ostream& operator<<(ostream& os, const Dir* dir)
+ostream& File::operator<<(ifstream& is)
 {
-    return os << "Dir count: " << outvar(dir->count) << endl;
-}
-
-ostream& operator<<(ostream& os, const Tiff* tiff)
-{
-    os << "Tiff ident:" << tiff->ident << tab
-        << outvar(tiff->nulls) << tab;
-    outwrite(os, tiff->allign)
-        << tab << hex << tiff->fixed << tab
-        << outvar(tiff->offset);
-    if (ldump(tiff, sizeof(Tiff))) os << endl;
-    auto dir = reinterpret_cast<const Dir*>((char*)tiff->allign + tiff->offset);
-    os << dir << endl;
-    int i = dir->count;
-    auto entry = dir->entries;
-    while (i--) {
-        const char* data = (char*)entry->data;
-        if (entry->count > sizeof(entry->data)) data = (char*)tiff->allign + entry->data;
-        os << "tag: " << 'x' << hex << uppercase << entry->tag << tab
-            << "format: " << outvar(entry->format) << tab
-            << "count: " << outvar(entry->count) << tab;
-        if (entry->format == 2) os << data;
-        else ldump(data, entry->count);
-        os << endl;
-        entry++;
-    }
-    return os;
-}
-
-ostream& operator<<(ostream& os, const Tag* tag)
-{
-    os << "Marker tag:" << uppercase << 'x' << hex << tag->tag << tab
-        << "size:" << outvar(littleEndian(tag->size)) << tab;
-    if (ldump(tag, sector)) os << endl;
-    // if (ldump(tag, littleEndian(tag->size) + offsetof(Tag, size))) os << endl;
-    return os;
+    uint16_t tag, size;
+    this->size = is.tellg();
+    is.seekg(0);
+    uint32_t ref = 0;
+    is.read((char*)&tag, sizeof(tag));
+    if (tag != JPEG) return cerr << "Not JPEG file: " << outvar(tag) << endl;
+    cerr << "Tags: ";
+    do {
+        is.read((char*)&tag, sizeof(tag));
+        is.read((char*)&size, sizeof(size));
+        size = outswap(size);
+        cerr << outhex(tag) << tab;
+        if (!ref && tag == EXIF) ref = is.tellg();
+        if (tag == SOS) sos = is.tellg();
+        is.seekg(size - sizeof(size), ios::cur);
+    } while (tag != SOS);
+    if (!ref) return cerr << "Exif marker NOT found" << endl;
+    is.seekg(ref, ios::beg);
+    ref = is.tellg() + 6L;
+    is.seekg(10, ios::cur);
+    uint32_t offset;
+    is.read((char*)&offset, sizeof(offset));
+    is.seekg(offset - 8, ios::cur);
+    is.read((char*)&size, sizeof(size));
+    cerr << "tags/" << outvar(size) << ": ";
+    while(size--) {
+        if (!is.read((char*)&tag, sizeof(tag))) return cerr << "Read error: " << is.tellg(); else
+        cerr << outhex(tag) << tab;
+        if (tag == DATE) break;
+        is.seekg(10, ios::cur);
+    };
+    uint16_t format;
+    is.read((char*)&format, sizeof(format));
+    if (format != 2) return cerr << "Wrong date format: " << format << endl;
+    uint32_t count;
+    is.read((char*)&count, sizeof(count));
+    is.read((char*)&offset, sizeof(offset));
+    is.seekg(ref + offset, ios::beg);
+    is >> date;
+    is.get();
+    string time(count - date.size() - 1, 0);
+    is.read(time.data(), time.size());
+    this->time = time;
+    picture = true;
+    return cerr;
 }

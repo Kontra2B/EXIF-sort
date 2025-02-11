@@ -12,6 +12,8 @@ bool Context::verbose = false;
 bool Context::debug = false;
 bool Context::confirm = false;
 
+using namespace std;
+
 ostream& operator<<(ostream& oss, const Context& context) {
     oss << "Directory:" << context.dir << ", ";
     if (context.count > 0) oss << "count:" << context.count << ", ";

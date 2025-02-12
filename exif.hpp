@@ -1,8 +1,7 @@
 #pragma once
 #include <ostream>
 #include <vector>
-
-#include "helper.hpp"
+#include <filesystem>
 
 using TAG = uint16_t;
 
@@ -11,14 +10,21 @@ const TAG JPEG = 0xD8FF;
 const TAG EXIF = 0xE1FF;
 const TAG SOS = 0xDAFF;
 const TAG END = 0xD9FF;
-const TAG DATE = 0x132;
+const TAG SIFD = 0x8769;
+const TAG DATE = 0x9003;
 
 struct File {
-    bool picture;
-    std::string name, date, time;
+    bool picture, exif, sub;
+    std::string name, path, date, time;
+    std::string year, month, day;
     uint32_t sos, size;
-    std::ostream& operator<<(std::ifstream&);
+    std::ifstream& operator<<(std::ifstream&);
     operator bool() const { return picture; };
-    File(std::string name): picture(false), name(name), sos(0), size(0) {}
+    File(const std::filesystem::directory_entry& entry) {
+        picture = exif = sub = false;
+        sos = size = 0;
+        name = entry.path().filename();
+        path = entry.path().parent_path();
+    }
     friend std::ostream& operator<<(std::ostream&, const File&);
 };

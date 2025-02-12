@@ -21,20 +21,19 @@ ostream& operator<<(ostream& oss, const Context& context) {
         if (!context.debug) oss << "verbose, ";
         else oss << "debug, ";
     }
+    if (context.sup) oss << "suppress, ";
     if (context.confirm) oss << "confirm, ";
-    if (context.format != Context::Format::None) {
-        oss << "path:/yyyy/";
-        if (context.format > Context::Format::Year) oss << "mm/";
-        if (context.format > Context::Format::Month) oss << "dd/";
-        oss << ", ";
-    }
+	oss << "path:/yyyy/";
+	if (context.format > Context::Format::Year) oss << "mm/";
+	if (context.format > Context::Format::Month) oss << "dd/";
+	oss << ", ";
     oss << "pid:" << getpid() << endl;
+	if (context.move) oss << "MOVING files" << endl;
     return oss << endl;
 }
 
 Context::Context(): dir(".") {
-    verbose = debug = confirm = force = false;
-    format = Context::Format::None;
+    move = verbose = debug = confirm = force = sup = false;
+    format = Context::Format::Month;
     count = -1L;
-    if (dir.back() == '/') dir.pop_back();
 }

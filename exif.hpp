@@ -5,7 +5,7 @@
 
 using TAG = uint16_t;
 
-const char MARK = 0xFF;
+const TAG MARK = 0xFF;
 const TAG JPEG = 0xD8FF;
 const TAG EXIF = 0xE1FF;
 const TAG SOS = 0xDAFF;
@@ -14,17 +14,26 @@ const TAG SIFD = 0x8769;
 const TAG DATE = 0x9003;
 
 struct File {
-    bool picture, exif, sub;
-    std::string name, path, date, time;
+    bool picture, exif, sub, end;
+    std::string name, path, dir, date;
     std::string year, month, day;
-    uint32_t sos, size;
+    uint32_t sos, psize, fsize;
     std::ifstream& operator<<(std::ifstream&);
-    operator bool() const { return picture; };
-    File(const std::filesystem::directory_entry& entry) {
-        picture = exif = sub = false;
-        sos = size = 0;
-        name = entry.path().filename();
-        path = entry.path().parent_path();
+    operator bool() const {
+        return picture && exif && sub && end
+            && !date.empty()
+            && strtol(year.c_str(), NULL, 10)
+            && strtol(month.c_str(), NULL, 10)
+            && strtol(day.c_str(), NULL, 10);
+    };
+    File(const std::filesystem::path& entry) {
+        picture = exif = sub = end = false;
+        sos = psize = fsize = 0;
+        name = entry.filename();
+        path = entry.parent_path();
     }
     friend std::ostream& operator<<(std::ostream&, const File&);
+    std::string full() const { return path + '/' + name; }
+    std::string target() const { return dir + name; }
+    bool move();
 };

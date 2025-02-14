@@ -17,6 +17,7 @@ using namespace std;
 ostream& operator<<(ostream& oss, const Context& context) {
     oss << "Directory:" << context.dir << ", ";
     if (context.count > 0) oss << "count:" << context.count << ", ";
+    if (context.skip > 0) oss << "skip:" << context.skip << ", ";
     if (context.size > 0) oss << "size:" << context.size << "k, ";
     if (context.verbose) {
         if (!context.debug) oss << "verbose, ";
@@ -37,5 +38,6 @@ Context::Context(): dir(".") {
     move = verbose = debug = confirm = force = sup = false;
     format = Context::Format::Month;
     count = -1L;
+    skip = 0;
     size = 0L;
 }

@@ -59,7 +59,8 @@ string& lower(string& text) {
 }
 
 void confirm() {
-    // if (!Context::confirm) return;
-    cerr << "\tPress a key to continue...";
+    if (!Context::confirm) return;
+    cerr << "Press ENTER to continue...";
     cin.get();
+    cerr << clean;
 }

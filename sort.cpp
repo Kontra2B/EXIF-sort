@@ -17,7 +17,7 @@ Context context;
 int main(int n, char** argv) {
     bool help = false;
 
-    unordered_map<string, map<int32_t, list<string>>> dups;
+    unordered_map<string, list<File>> dups;
 
     for (int i = 1; i < n; i++) {
         char* arg = argv[i];
@@ -26,13 +26,13 @@ int main(int n, char** argv) {
             else if (*arg == 'R') context.move = true;
             else if (*arg == 'c') context.confirm = true;
             else if (*arg == 's') context.sup = true;
+            else if (*arg == 'd') context.dups = true;
             else if (*arg == 'v') if (context.verbose) context.debug = true; else context.verbose = true;
             else if (*arg == 'Y') context.format = Context::Format::Year;
             else if (*arg == 'M') context.format = Context::Format::Month;
             else if (*arg == 'D') context.format = Context::Format::Day;
             else if (*arg == 'n') { context.count = strtol(++arg, nullptr, 0); break; }
             else if (*arg == 'x') { context.skip = strtol(++arg, nullptr, 0); break; }
-            else if (*arg == 'S') { context.size = strtol(++arg, nullptr, 0); break; }
         }
         else {
             context.dir = arg;
@@ -43,9 +43,9 @@ int main(int n, char** argv) {
     if (help) cout << R"EOF(options:
 -h      display this help message and quit, helpfull to see other argument parsed
 -M      move files, dry run overwise
+-d      create list of duplicate files
 -n      process number of files
 -x      skip number of files
--S      minimum size of a file being moved to overwrite existing file
 -f      overwrite target file if exists
 -v      be verbose, if repeated be more verbose with debug info
 -Y      file path under target directory will be altered to /yyyy/
@@ -81,7 +81,6 @@ Parsed arguments:
         if (!ifs) { cerr << "Could not open file: " << entry.path() << endl; continue; }
         File file(entry.path());
         file << ifs;
-        if (file) dups[file.date][file.psize].push_back(file.full());
         cout << i << ". " << file;
 
         if (!file) {
@@ -97,29 +96,37 @@ Parsed arguments:
             continue;
         }
 
-        file.move();
+        if (file.move()) {
+            if (context.dups)
+                dups[file.date].push_back(file);
+        }
+        else if (context.dups) {
+            auto& list = dups[file.date];
+            auto it = list.begin();
+            while (it != list.end())
+                if (file > *it) {
+                    list.insert(it, file);
+                    break;
+                } else it++;
+            if (it == list.end()) list.push_back(file);
+        }
     }
 
-    auto date = dups.begin();
-    while (date != dups.end()) {
-        auto size = date->second.begin();
-        while (size != date->second.end())
-            if (size->second.size() < 2)
-                size = date->second.erase(size);
-            else size++;
-       if (date->second.empty()) date = dups.erase(date);
-       else date++;
-    }
-    ofstream of("duplicate.files.log");
-    of << "Duplicate files:" << endl;
-    for (auto& date: dups) {
-        of << date.first;
-        for (auto& size: date.second) {
-            of << tab << size.first / (1 << 10) << 'k';
-            for (auto& name: size.second)
-                of << tab << name;
+    if (context.dups) {
+        auto date = dups.begin();
+        while (date != dups.end()) {
+            if (date->second.size() < 2)
+                date = dups.erase(date);
+            else date++;
+        }
+        ofstream of("duplicate.files.log");
+        // of << "Duplicate files:" << endl;
+        for (auto& date: dups) {
+                auto it = date.second.cbegin();
+                auto best = *it++;
+                while (it != date.second.end())
+                    of << *it++<< tab << '<' << tab << best;
             }
-        of << endl;
     }
     return 0;
 }
@@ -150,7 +157,7 @@ bool File::move() {
             if (ifs) file << ifs;
 
             bool skip = file > *this;
-            if (skip) cout << "skipping: " << file;
+            if (skip) cout << "skipping: " << file << enter;
             else cerr << *this << tab << "OVERWRITING: " << file << endl;
             if (skip) return false;
             else confirm();
@@ -163,11 +170,11 @@ bool File::move() {
 
 ostream& operator<<(ostream& os, const File& file)
 {
-    if (!file) os << "! ";
+    if (!file) os << "!";
     os << file.full();
-    if (!file.date.empty()) os << " date: " << file.date;
-    os << " size: " << file.fsize / (1 << 10) << 'k';
-    if (file.res) os << " res: " << file.width << '/' << file.hight;
+    if (!file.date.empty()) os << tab << file.date;
+    os << tab << file.psize; //  / (1 << 10) << 'k';
+    if (file.res) os << tab << file.width << '/' << file.hight;
     if (!file) os << tab;
     if (!file.picture) os << "not JPEG file";
     else if (!file.exif) os << "no EXIF data";
@@ -184,7 +191,9 @@ bool File::operator>(const File& file)
 {
     if (*this && !file) return true;
     if (width * hight > file.width * file.hight) return true;
-    return hight > file.hight;
+    if (hight > file.hight) return true;
+    if (fsize > file.fsize) return true;
+    return psize < file.psize;
 }
 
 ifstream& File::operator<<(ifstream& is)
@@ -194,7 +203,7 @@ ifstream& File::operator<<(ifstream& is)
     fsize = info.st_size;
 
     uint16_t tag, size;
-    uint32_t ref = 0;
+    uint32_t sof, ref = sof = 0;
     is.read((char*)&tag, sizeof(tag));
     if (tag != JPEG) return is;
     picture = true;
@@ -207,7 +216,8 @@ ifstream& File::operator<<(ifstream& is)
         size = __builtin_bswap16(size);
         if (context.debug) { cerr << ' ' << outhex(__builtin_bswap16(tag)) << '@' << outhex(pos); if (tag == EXIF) cerr << '!'; }
         if (!ref && tag == EXIF) ref = is.tellg();
-        if (tag == SOS) psize = fsize - is.tellg();
+        if (tag == SOS)
+            psize = fsize - is.tellg();
         if (tag == SOF) sof = is.tellg();
         if (!is.seekg(size - sizeof(size), ios::cur)) { if (context.verbose) cerr << "Seek error @" << is.tellg() << tab; return is; }
     } while (tag != SOS);
@@ -218,12 +228,11 @@ ifstream& File::operator<<(ifstream& is)
     if (strncmp(id, EXIFID, 4)) return is;
     exif = true;
     is.seekg(2, ios::cur);
-    char tiff[2];
+    char tiff[4] = {};
     bool swap = false;
     is.read(tiff, 2);
     if (!strncmp(tiff, "MM", 2)) swap = true;
-    if (context.debug) cerr << ' ' << "Id" << ':' << tiff;
-    if (swap ) cerr << "/swap";
+    if (context.debug) { cerr << ' ' << "Id" << ':' << string(tiff); if (swap ) cerr << "/swap"; }
     is.seekg(ref + 10L, ios::beg);
     ref +=6L;
     uint32_t offset;
@@ -242,7 +251,6 @@ ifstream& File::operator<<(ifstream& is)
         if (!is.seekg(10, ios::cur)) { if (context.verbose) cerr << "Seek error @" << is.tellg() << tab; return is; }
     };
     if (tag != SIFD) return is;
-    sub = true;
     uint16_t format;
     is.read((char*)&format, sizeof(format));
     uint32_t count;
@@ -253,6 +261,7 @@ ifstream& File::operator<<(ifstream& is)
     is.seekg(ref + offset, ios::beg);           // seek to SUB IFD
     is.read((char*)&size, sizeof(size));
     if (swap) size = __builtin_bswap16(size);
+    sub = true;
     if (context.debug) cerr << endl << "SIFD/" << outvar(size) << '@' << outhex(offset) << ':';
     uint32_t pdate(0), pwidth(0), phight(0);
     while(size--) {
@@ -265,7 +274,7 @@ ifstream& File::operator<<(ifstream& is)
         if (tag == HIGHT) phight = is.tellg();
         if (!is.seekg(10, ios::cur)) { if (context.verbose) cerr << "Seek error @" << is.tellg() << tab; return is; }
     }
-    cerr << endl;
+    if (context.verbose) cerr << endl;
     if (pdate) {
         is.seekg(pdate);
         is.read((char*)&format, sizeof(format));
@@ -288,30 +297,15 @@ ifstream& File::operator<<(ifstream& is)
         date += '-' + string(time);
         if (context.debug) cerr << "Date" << '@' << outhex(pos) << ": " << date;
     }
-    res = pwidth && phight;
-    if (pwidth) {
-        is.seekg(pwidth);
-        is.read((char*)&format, sizeof(format));
-        if (swap) format = __builtin_bswap16(format);
-        is.read((char*)&count, sizeof(count));
-        if (swap) count = __builtin_bswap32(count);
-        is.read((char*)&width, sizeof(width));
-        if (swap) width = __builtin_bswap32(width);
-        if (format == 3) width = width >> 16;
-        if (context.debug) cerr << tab << "width" << '@' << outhex(pwidth + 6) << ": " << outvar(width);
-    }
-    if (phight) {
-        is.seekg(phight);
-        is.read((char*)&format, sizeof(format));
-        if (swap) format = __builtin_bswap16(format);
-        is.read((char*)&count, sizeof(count));
-        if (swap) count = __builtin_bswap32(count);
-        is.read((char*)&hight, sizeof(hight));
-        if (swap) hight = __builtin_bswap32(hight);
-        if (format == 3) hight = hight >> 16;
-        if (context.debug) cerr << tab << "hight" << '@' << outhex(phight + 6) << ": " << outvar(hight) << enter;
-    }
-    
+    is.seekg(++sof);
+    is.read((char*)&hight, sizeof(hight));
+    hight = __builtin_bswap16(hight);
+    if (context.debug) cerr << tab << "hight" << '@' << outhex(sof) << ": " << outvar(hight) << tab;
+    is.read((char*)&width, sizeof(width));
+    width = __builtin_bswap16(width);
+    if (context.debug) cerr << tab << "width" << '@' << outhex(sof + 2) << ": " << outvar(width) << enter;
+    res = sof;
+
     is.seekg(-2, ios::end);
     if (!is.read((char*)&tag, sizeof(tag))) { if (context.verbose) cerr << "Read error @" << is.tellg() << tab; }
     else if (tag == END) end = true;

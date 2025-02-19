@@ -21,7 +21,8 @@ struct File {
     bool picture, exif, sub, res, end;
     std::string name, path, dir, date;
     std::string year, month, day;
-    uint32_t sof, psize, fsize, hight, width;
+    uint32_t psize, fsize;
+    uint16_t hight, width;
     std::ifstream& operator<<(std::ifstream&);
     operator bool() const {
         return picture && exif && sub && end
@@ -32,7 +33,7 @@ struct File {
     };
     File(const std::filesystem::path& entry) {
         picture = exif = sub = end = res = false;
-        sof = psize = fsize = width = hight = 0;
+        psize = fsize = width = hight = 0;
         name = entry.filename();
         path = entry.parent_path();
     }

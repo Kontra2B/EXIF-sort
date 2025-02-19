@@ -16,28 +16,29 @@ using namespace std;
 
 ostream& operator<<(ostream& oss, const Context& context) {
     oss << "Directory:" << context.dir << ", ";
+    if (context.dups) oss << "save duplicate list, ";
     if (context.count > 0) oss << "count:" << context.count << ", ";
     if (context.skip > 0) oss << "skip:" << context.skip << ", ";
-    if (context.size > 0) oss << "size:" << context.size << "k, ";
     if (context.verbose) {
-        if (!context.debug) oss << "verbose, ";
-        else oss << "debug, ";
+        if (context.debug) oss << "debug, ";
+        else oss << "verbose, ";
     }
     if (context.sup) oss << "suppress, ";
     if (context.confirm) oss << "confirm, ";
-	oss << "path:/yyyy/";
-	if (context.format > Context::Format::Year) oss << "mm/";
-	if (context.format > Context::Format::Month) oss << "dd/";
-	oss << ", ";
+    if (context.move) {
+        oss << "path:/yyyy/";
+        if (context.format > Context::Format::Year) oss << "mm/";
+        if (context.format > Context::Format::Month) oss << "dd/";
+        oss << ", ";
+    }
     oss << "pid:" << getpid() << endl;
 	if (context.move) oss << "MOVING files" << endl;
     return oss << endl;
 }
 
 Context::Context(): dir(".") {
-    move = verbose = debug = confirm = force = sup = false;
+    move = verbose = debug = confirm = force = sup = dups = false;
     format = Context::Format::Month;
     count = -1L;
     skip = 0;
-    size = 0L;
 }

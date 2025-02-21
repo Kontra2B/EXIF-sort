@@ -43,25 +43,20 @@ int main(int n, char** argv) {
                 }
             }
         }
-        else if (pending) {
-            pending = false;
-            context.out = arg;
-            while (context.out.back() == '/') context.out.pop_back();
-        }
-        else {
-            context.dir = arg;
-            while (context.dir.back() == '/') context.dir.pop_back();
-        }
+        else if (pending) context.out = arg;
+        else context.dir = context.out = arg;
     }
 
-    if (help) cout << R"EOF(options:
+    if (help) cout << R"EOF(./exif.sort DIR [OPTIONS]
+
+OPTIONS:
 -h      display this help message and quit, helpfull to see other argument parsed
--M      move files, dry run otherwise
+-M      move files, dry run otherwise, only across one filesystem
 -a      move all files, otherwise jpeg pictures only
--d      create list of duplicate files
--n      process number of files
--x      skip number of files
--t      target directory
+-d      create list of duplicate pictures
+-n      number of files to process
+-x      number of files to skip
+-t      target directory, DIR overwrites target directory
 -v      be verbose, if repeated be more verbose with debug info
 -Y      file path under target directory will be altered to /yyyy/
 -M      file path under target directory will be altered to /yyyy/mm/
@@ -71,6 +66,8 @@ int main(int n, char** argv) {
 Parsed arguments:
 )EOF" << endl;
 
+	while (context.out.back() == '/') context.out.pop_back();
+	while (context.dir.back() == '/') context.dir.pop_back();
     cout << context;
     
     if (help) exit(EXIT_SUCCESS);
@@ -80,13 +77,13 @@ Parsed arguments:
         return 1;
     }
 
-	if (context.move) confirm();
+	confirm();
 
     recursive_directory_iterator iter;
     try { iter = recursive_directory_iterator(context.dir); }
     catch (filesystem_error&) {
         cerr << "Not a directory: " << context.dir << endl;
-        return 1;
+        return 2;
     }
     int i = 0;
     for (auto entry: iter) {
@@ -98,7 +95,7 @@ Parsed arguments:
         if (!ifs) { cerr << "Could not open file: " << entry.path() << endl; continue; }
         File file(entry.path());
         cerr << i << ". ";
-        file << ifs;
+        file << ifs;		// create file object from disk file
         cout << file;
 
         if (file.target() == file.full()) {

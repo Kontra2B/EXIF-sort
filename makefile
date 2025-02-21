@@ -1,20 +1,20 @@
 CC = g++
-CFLAGS = -o0
+CFLAGS = -o2
 SRC = sort.cpp context.cpp helper.cpp
 INC = context.hpp helper.hpp exif.hpp
 OBJ = $(SRC:%.cpp=%.o)
 
-.PHONY: all debug release clean
+.PHONY: all debug clean
 
 all: exif.sort
 
-*.o: *.cpp
-	$(CC) $(CFLAGS) -c
+%.o: %.cpp $(INC)
+	$(CC) $(CFLAGS) -c $< -o $@
 
 exif.sort: $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) -o $@
+	$(CC) $^ -o $@
 
-debug: CFLAGS += -ggdb3
+debug: CFLAGS = -ggdb3 -o0
 debug: exif.sort
 
 clean: 

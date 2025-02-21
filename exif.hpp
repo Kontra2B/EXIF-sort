@@ -6,34 +6,39 @@
 using TAG = uint16_t;
 
 const TAG MARK = 0xFF;
+
 const TAG JPEG = 0xD8FF;
+
 const TAG EXIF = 0xE1FF;
 const TAG SOF = 0xC0FF;
 const TAG SOS = 0xDAFF;
 const TAG END = 0xD9FF;
+
+const TAG ORNT = 0x0112;
 const TAG SIFD = 0x8769;
+
 const TAG DATE = 0x9003;
 const TAG WIDTH = 0xA002;
 const TAG HIGHT = 0xA003;
 const char EXIFID[] = "Exif";
 
 struct File {
-    bool picture, exif, sub, res, end;
+    bool picture, exif, sos, sub, res, end;
     std::string name, path, dir, date;
     std::string year, month, day;
-    uint32_t psize, fsize;
-    uint16_t hight, width;
+    uint32_t size;
+    uint16_t hight, width, ornt;
     std::ifstream& operator<<(std::ifstream&);
     operator bool() const {
-        return picture && exif && sub && end
+        return picture && exif && sos && sub && end
             && !date.empty()
             && strtol(year.c_str(), NULL, 10)
             && strtol(month.c_str(), NULL, 10)
             && strtol(day.c_str(), NULL, 10);
     };
     File(const std::filesystem::path& entry) {
-        picture = exif = sub = end = res = false;
-        psize = fsize = width = hight = 0;
+        picture = exif = sos = sub = end = res = false;
+        size = width = hight = ornt = 0;
         name = entry.filename();
         path = entry.parent_path();
     }

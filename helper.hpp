@@ -17,5 +17,5 @@
 bool ldump(const void*, uint, uint = 0);
 bool pdump(const void*, const void*);
 bool dump(const std::vector<char>&);
-void confirm();
+void confirm(bool cond = false);
 std::string& lower(std::string&);

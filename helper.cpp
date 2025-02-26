@@ -58,8 +58,8 @@ string& lower(string& text) {
     return text;
 }
 
-void confirm() {
-    if (!Context::confirm) return;
+void confirm(bool cond) {
+    if (!Context::confirm && !cond) return;
     cerr << "Press ENTER to continue...";
     cin.get();
     cerr << clean;

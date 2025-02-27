@@ -24,21 +24,21 @@ const TAG HIGHT = 0xA003;
 const char EXIFID[] = "Exif";
 
 struct File {
-	bool picture, exif, sos, sub, res, end;
+	bool picture, exif, sos, sub, dat, res, end;
 	std::string name, path, dir, date, make;
 	std::string year, month, day;
 	uint32_t size;
 	uint16_t hight, width, ornt;
 	std::ifstream& operator<<(std::ifstream&);
 	operator bool() const {
-		return picture && exif && sos && sub && end
+		return picture && exif && sos && sub && dat && end
 			&& !date.empty()
 			&& strtol(year.c_str(), NULL, 10)
 			&& strtol(month.c_str(), NULL, 10)
 			&& strtol(day.c_str(), NULL, 10);
 	};
 	File(const std::filesystem::path& entry) {
-		picture = exif = sos = sub = end = res = false;
+		picture = exif = sos = sub = end = dat = res = false;
 		size = width = hight = ornt = 0;
 		name = entry.filename();
 		path = entry.parent_path();

@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cstring>
+#include <variant>
 #include <map>
 #include <list>
 #include <sys/stat.h>
@@ -25,6 +26,7 @@ int main(int n, char** argv) {
 			while (*++arg) {
 				if (*arg == 'h') help = true;
 				else if (*arg == 'R') context.move = true;
+				else if (*arg == 'r') context.recurse = true;
 				else if (*arg == 'c') context.confirm = true;
 				else if (*arg == 'S') context.sup = true;
 				else if (*arg == 'd') context.dups = true;
@@ -35,9 +37,9 @@ int main(int n, char** argv) {
 				else if (*arg == 'D') context.format = Context::Format::Day;
 				else if (*arg == 'n') { context.count = strtol(++arg, nullptr, 0); break; }
 				else if (*arg == 's') { context.skip = strtol(++arg, nullptr, 0); break; }
-				else if (*arg == 'i') { context.prefer.insert(++arg); break; }
-				else if (*arg == 'x') { context.avoid.insert(++arg); break; }
-				else if (*arg == 'f') { context.name.insert(++arg); break; }
+				else if (*arg == 'i') { context.prefer.push_back(++arg); break; }
+				else if (*arg == 'x') { context.avoid.push_back(++arg); break; }
+				else if (*arg == 'f') { context.name.push_back(++arg); break; }
 				else if (*arg == 't') {
 					if (*++arg) context.out = arg;
 					else pending = true;
@@ -49,8 +51,7 @@ int main(int n, char** argv) {
 		else {
 			string dir(arg);
 			while (dir.back() == '/') dir.pop_back();
-			context.dirs.insert(dir);
-			if (context.out.empty()) context.out = dir;
+			context.dirs.push_back(dir);
 		}
 	}
 
@@ -61,6 +62,7 @@ DIR		working directory
 OPTIONS:
 -h		display this help message and quit, helpfull to see other argument parsed
 -R		move files, dry run otherwise, only across one filesystem
+-r		move files, dry run otherwise, only across one filesystem
 -a		move all files, otherwise jpeg pictures only
 -d		create list of duplicate pictures
 -n		number of files to process
@@ -72,68 +74,80 @@ OPTIONS:
 -D		file path under target directory will be altered to /yyyy/mm/dd/
 -i		add preferred path key
 -x		add void path key
+-f		add preferred file name key
 -S		suppres output
 -c		confirm possible errors
 
 Parsed arguments:
 )EOF" << endl;
 
-		while (context.out.back() == '/') context.out.pop_back();
+	while (context.out.back() == '/') context.out.pop_back();
+	if (context.dirs.empty()) context.dirs.push_back(".");
+	if (context.out.empty()) context.out = context.dirs.front();
+
 	cout << context;
 
 	if (help) exit(EXIT_SUCCESS);
 
 	confirm(context.move);
+	using any_iterator = variant<directory_iterator, recursive_directory_iterator>;
+	any_iterator it;
+	directory_options opts = directory_options::skip_permission_denied;
 
-	if (context.dirs.empty()) context.dirs.insert(".");
 	for (const auto& dir: context.dirs) {
 		if (!exists(dir)) {
 			cerr << "Directory not found: " << dir << endl;
 			continue;
 		}
 		if (!context.count) break;
-
-		recursive_directory_iterator iter;
-		try { iter = recursive_directory_iterator(dir); }
+		try {
+			if (context.recurse) it = recursive_directory_iterator(dir, opts);
+			else it = directory_iterator(dir, opts);
+		}
 		catch (filesystem_error&) {
 			cerr << "Not a directory: " << dir << endl;
 			continue;
 		}
-		int i = 0;
-		for (auto entry: iter) {
-			if (!entry.is_regular_file()) continue;
-			i++;
-			if (context.skip && context.skip--) continue;
-			if (!context.count || !context.count--) break;
-			ifstream ifs(entry.path(), ios::binary);
-			if (!ifs) { cerr << "Could not open file: " << entry.path() << endl; continue; }
-			File file(entry.path());
-			cerr << i << ". ";
-			file << ifs;		// create file object from disk file
-			cout << file;
+		visit([&dups](auto&& iter){
+				int i = 0;
+				for (auto entry: iter) {
+					if (!entry.is_regular_file()) continue;
+					i++;
+					if (context.skip && context.skip--) continue;
+					if (!context.count || !context.count--) break;
+					ifstream ifs(entry.path(), ios::binary);
+					if (!ifs) { cerr << "Could not open file: " << entry.path() << endl; continue; }
+					File file(entry.path());
+					cerr << i << ". ";
+					file << ifs;		// create file object from disk file
+					cout << file;
 
-			if (file.target() == file.full()) {
-				cout << tab << "on place";
-				if(context.suppress()) cout << clean;
-				else cout << enter;
-				continue;
-			}
+					if (file.target() == file.full()) {
+						cout << tab << "on place";
+						if(context.suppress()) cout << clean;
+						else cout << enter;
+						continue;
+					}
 
-			file.move();
+					file.move();
 
-			if (!file.picture && !context.all) continue;
+					if (!file.picture && !context.all) continue;
 
-			if (context.dups) {
-				auto& list = dups[file.date];
-				auto it = list.begin();
-				while (it != list.end())
-					if (file > *it) {
-						list.insert(it, file);
-						break;
-					} else it++;
-				if (it == list.end()) list.push_back(file);
-			}
-		}
+					if (context.dups) {
+						auto& list = dups[file.date];
+						auto it = list.begin();
+						while (it != list.end())
+							if (file > *it) {
+								list.insert(it, file);
+								break;
+							} else it++;
+						if (it == list.end())
+							if (!file.picture
+									|| file.dat)
+								list.push_back(file);
+					}
+				}
+		}, it);
 	}
 
 	if (context.dups) {
@@ -223,11 +237,15 @@ bool File::operator>(const File& file)
 	if (ornt > 1 && file.ornt <= 1) return true;
 	if (hight < file.hight) return false;
 	for (const auto& key: context.prefer)
-		if (file.path.find(key) != file.path.npos) return true;
+		if (file.path.find(key) != string::npos) return false;
+		else if (path.find(key) != string::npos) return true;
 	for (const auto& key: context.avoid)
-		if (file.path.find(key) != file.path.npos) return false;
+		if (full().find(key) != string::npos) return false;
+		else if (file.full().find(key) != string::npos) return true;
 	for (const auto& key: context.name)
-		if (file.name.find(key) != file.path.npos) return true;
+		if (file.name.find(key) != string::npos) return false;
+		else if (name.find(key) == string::npos) return true;
+	// if (path.size() > file.path.size()) return true;
 	return size < file.size;
 }
 
@@ -246,7 +264,7 @@ ifstream& File::operator<<(ifstream& is)
 	char buffer[20];	// YYYY-MM-DD HH:MM:SS = 19 znaków + null
 	std::tm tm_date;
 	localtime_r(&info.st_mtime, &tm_date);
-	std::strftime(buffer, sizeof(buffer), "%Y:%m:%d %H:%M:%S", &tm_date);
+	std::strftime(buffer, sizeof(buffer), "%Y:%m:%d-%H:%M:%S", &tm_date);
 	date = string(buffer);
 	uint16_t tag, size;
 	uint32_t mkof(0), mksize(0);
@@ -265,7 +283,7 @@ ifstream& File::operator<<(ifstream& is)
 			if (!ref && tag == EXIF) ref = is.tellg();
 			if (tag == SOS) sos = true;
 			if (tag == SOF) sof = is.tellg();
-			IFSTREAM_SEEK_REF(size - sizeof(size), ios::cur)
+			IFSTREAM_SEEK_REL(size - sizeof(size))
 		} while (tag != SOS);
 		DEBUG(enter);
 		if (ref) { 
@@ -354,6 +372,7 @@ ifstream& File::operator<<(ifstream& is)
 							IFSTREAM_READ(time);
 							date += '-' + string(time);
 							if (date == "0000:00:00-00:00:00") date = buffer;		// revert to file modification date
+							else dat = true;
 							DEBUG("Date" << '@' << outhex(pos) << ": " << date)
 						}
 					}
@@ -389,7 +408,7 @@ ifstream& File::operator<<(ifstream& is)
 	istringstream iss(date);
 	getline(iss, year, ':');
 	getline(iss, month, ':');
-	getline(iss, day, ':');
+	getline(iss, day, '-');
 
 	dir = context.out + '/' + year + '/';
 	if (context.format > context.Format::Year) dir += month + '/';

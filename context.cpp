@@ -14,8 +14,8 @@ ostream& operator<<(ostream& oss, const Context& context) {
 	oss << "Working directory:";
 	for (const auto& dir: context.dirs) oss << dir << ",";
 	oss << ' ';
-	if (*context.dirs.begin() != context.out)
-		oss << "output directory:" << context.out << ", ";
+	if (context.dirs.front() != context.out)
+		oss << "target directory:" << context.out << ", ";
 	if (context.dups) oss << "save duplicate list, ";
 	if (!context.prefer.empty()) {
 		oss << "prefer:";
@@ -32,6 +32,7 @@ ostream& operator<<(ostream& oss, const Context& context) {
 		for (const auto& key: context.avoid) oss << key << ',';
 		oss << ' ';
 	}
+	if (context.recurse) oss << "recursive, ";
 	if (context.count > 0) oss << "count:" << context.count << ", ";
 	if (context.skip > 0) oss << "skip:" << context.skip << ", ";
 	if (context.verbose) {
@@ -53,7 +54,7 @@ ostream& operator<<(ostream& oss, const Context& context) {
 
 Context::Context()
 {
-	move = verbose = debug = confirm = force = sup = dups = all = false;
+	move = recurse = verbose = debug = confirm = force = sup = dups = all = false;
 	format = Context::Format::Month;
 	count = -1L;
 	skip = 0;

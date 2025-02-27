@@ -55,19 +55,19 @@ int main(int n, char** argv) {
 		}
 	}
 
-	if (help) cout << argv[0] << R"EOF( [OPTIONS] DIR
+	if (help) cout << argv[0] << R"EOF( [OPTIONS] DIR [DIR]
 
 DIR		working directory
 
 OPTIONS:
 -h		display this help message and quit, helpfull to see other argument parsed
 -R		move files, dry run otherwise, only across one filesystem
--r		move files, dry run otherwise, only across one filesystem
+-r		working directories recursive scan
+-t		target directory, defaults to first working dir
 -a		move all files, otherwise jpeg pictures only
 -d		create list of duplicate pictures
 -n		number of files to process
 -s		number of files to skip
--t		target directory, defaults to working dir
 -v		be verbose, if repeated be more verbose with debug info
 -Y		file path under target directory will be altered to /yyyy/
 -M		file path under target directory will be altered to /yyyy/mm/
@@ -75,7 +75,7 @@ OPTIONS:
 -i		add preferred path key
 -x		add void path key
 -f		add preferred file name key
--S		suppres output
+-S		suppress output
 -c		confirm possible errors
 
 Parsed arguments:
@@ -90,16 +90,16 @@ Parsed arguments:
 	if (help) exit(EXIT_SUCCESS);
 
 	confirm(context.move);
-	using any_iterator = variant<directory_iterator, recursive_directory_iterator>;
-	any_iterator it;
+	using dir_iterator = variant<directory_iterator, recursive_directory_iterator>;
+	dir_iterator it;
 	directory_options opts = directory_options::skip_permission_denied;
 
 	for (const auto& dir: context.dirs) {
+		if (!context.count) break;
 		if (!exists(dir)) {
 			cerr << "Directory not found: " << dir << endl;
 			continue;
 		}
-		if (!context.count) break;
 		try {
 			if (context.recurse) it = recursive_directory_iterator(dir, opts);
 			else it = directory_iterator(dir, opts);
@@ -109,44 +109,43 @@ Parsed arguments:
 			continue;
 		}
 		visit([&dups](auto&& iter){
-				int i = 0;
-				for (auto entry: iter) {
-					if (!entry.is_regular_file()) continue;
-					i++;
-					if (context.skip && context.skip--) continue;
-					if (!context.count || !context.count--) break;
-					ifstream ifs(entry.path(), ios::binary);
-					if (!ifs) { cerr << "Could not open file: " << entry.path() << endl; continue; }
-					File file(entry.path());
-					cerr << i << ". ";
-					file << ifs;		// create file object from disk file
-					cout << file;
+			int i = 0;
+			for (auto entry: iter) {
+				if (!entry.is_regular_file()) continue;
+				i++;
+				if (context.skip && context.skip--) continue;
+				if (!context.count || !context.count--) break;
+				ifstream ifs(entry.path(), ios::binary);
+				if (!ifs) { cerr << "Could not open file: " << entry.path() << endl; continue; }
+				File file(entry.path());
+				cerr << i << ". ";
+				file << ifs;		// create file object from disk file
+				cout << file;
 
-					if (file.target() == file.full()) {
-						cout << tab << "on place";
-						if(context.suppress()) cout << clean;
-						else cout << enter;
-						continue;
-					}
-
-					file.move();
-
-					if (!file.picture && !context.all) continue;
-
-					if (context.dups) {
-						auto& list = dups[file.date];
-						auto it = list.begin();
-						while (it != list.end())
-							if (file > *it) {
-								list.insert(it, file);
-								break;
-							} else it++;
-						if (it == list.end())
-							if (!file.picture
-									|| file.dat)
-								list.push_back(file);
-					}
+				if (file.target() == file.full()) {
+					cout << tab << "on place";
+					if(context.suppress()) cout << clean;
+					else cout << enter;
+					continue;
 				}
+
+				file.move();
+
+				if (!file.picture && !context.all) continue;
+
+				if (context.dups) {
+					auto& list = dups[file.date];
+					auto it = list.begin();
+					while (it != list.end())
+						if (file > *it) {
+							list.insert(it, file);
+							break;
+						} else it++;
+					if (it == list.end())
+						if (!file.picture || file.dat)
+							list.push_back(file);
+				}
+			}
 		}, it);
 	}
 

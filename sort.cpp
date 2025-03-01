@@ -3,6 +3,7 @@
 #include <variant>
 #include <map>
 #include <list>
+#include <unordered_map>
 #include <sys/stat.h>
 
 #include "helper.hpp"
@@ -14,15 +15,26 @@ using namespace filesystem;
 
 Context context;
 
+using option = variant<monostate, int64_t*, string*, list<string>*>;
+
+void set(option* param, char* value) {
+	if (!*value) return;
+	if (auto target = get_if<int64_t*>(param)) **target = strtol(value, nullptr, 0);
+	else if (auto target = get_if<string*>(param)) **target = value;
+	else if (auto target = get_if<list<string>*>(param)) (*target)->push_back(value);
+	*param = monostate{};
+}
+
 int main(int n, char** argv) {
-	bool help(false), pending(false);
+	bool help(false);
 
 	unordered_map<string, list<File>> dups;
+	option pending;
 
 	for (int i = 1; i < n; i++) {
 		char* arg = argv[i];
 		if (*arg == '-') {
-			pending = false;
+			pending = monostate{};
 			while (*++arg) {
 				if (*arg == 'h') help = true;
 				else if (*arg == 'R') context.move = true;
@@ -31,23 +43,23 @@ int main(int n, char** argv) {
 				else if (*arg == 'S') context.sup = true;
 				else if (*arg == 'd') context.dups = true;
 				else if (*arg == 'a') context.all = true;
-				else if (*arg == 'v') if (context.verbose) context.debug = true; else context.verbose = true;
 				else if (*arg == 'Y') context.format = Context::Format::Year;
 				else if (*arg == 'M') context.format = Context::Format::Month;
 				else if (*arg == 'D') context.format = Context::Format::Day;
-				else if (*arg == 'n') { context.count = strtol(++arg, nullptr, 0); break; }
-				else if (*arg == 's') { context.skip = strtol(++arg, nullptr, 0); break; }
-				else if (*arg == 'i') { context.prefer.push_back(++arg); break; }
-				else if (*arg == 'x') { context.avoid.push_back(++arg); break; }
-				else if (*arg == 'f') { context.name.push_back(++arg); break; }
-				else if (*arg == 't') {
-					if (*++arg) context.out = arg;
-					else pending = true;
-					break;
+				else if (*arg == 'n') pending = &context.count;
+				else if (*arg == 's') pending = &context.skip;
+				else if (*arg == 'i') pending = &context.prefer;
+				else if (*arg == 'x') pending = &context.avoid;
+				else if (*arg == 'f') pending = &context.keys;
+				else if (*arg == 't') pending = &context.out;
+				else if (*arg == 'v') if (context.verbose) context.debug = true; else context.verbose = true;
+				if (pending.index()) {
+					set(&pending, ++arg);
+					break;					// consume remaining chars
 				}
 			}
 		}
-		else if (pending) context.out = arg;
+		else if (pending.index()) set(&pending, arg);
 		else {
 			string dir(arg);
 			while (dir.back() == '/') dir.pop_back();
@@ -65,7 +77,7 @@ OPTIONS:
 -r		working directories recursive scan
 -t		target directory, defaults to first working dir
 -a		move all files, otherwise jpeg pictures only
--d		create list of duplicate pictures
+-d		create list of duplicate files
 -n		number of files to process
 -s		number of files to skip
 -v		be verbose, if repeated be more verbose with debug info
@@ -90,16 +102,14 @@ Parsed arguments:
 	if (help) exit(EXIT_SUCCESS);
 
 	confirm(context.move);
+
 	using dir_iterator = variant<directory_iterator, recursive_directory_iterator>;
 	dir_iterator it;
 	directory_options opts = directory_options::skip_permission_denied;
 
 	for (const auto& dir: context.dirs) {
 		if (!context.count) break;
-		if (!exists(dir)) {
-			cerr << "Directory not found: " << dir << endl;
-			continue;
-		}
+		if (!exists(dir)) { cerr << "Directory not found: " << dir << endl; continue; }
 		try {
 			if (context.recurse) it = recursive_directory_iterator(dir, opts);
 			else it = directory_iterator(dir, opts);
@@ -131,7 +141,7 @@ Parsed arguments:
 
 				file.move();
 
-				if (!file.picture && !context.all) continue;
+				if (!file.pic && !context.all) continue;
 
 				if (context.dups) {
 					auto& list = dups[file.date];
@@ -142,7 +152,7 @@ Parsed arguments:
 							break;
 						} else it++;
 					if (it == list.end())
-						if (!file.picture || file.dat)
+						if (!file.pic || file.dat)
 							list.push_back(file);
 				}
 			}
@@ -151,11 +161,10 @@ Parsed arguments:
 
 	if (context.dups) {
 		auto date = dups.begin();
-		while (date != dups.end()) {
+		while (date != dups.end())
 			if (date->second.size() < 2)
 				date = dups.erase(date);
 			else date++;
-		}
 		ofstream of("duplicate.files.log");
 		// of << "Duplicate files:" << endl;
 		for (auto& date: dups) {
@@ -170,7 +179,7 @@ Parsed arguments:
 
 bool File::move()
 {
-	if (picture || context.all) {
+	if (pic || context.all) {
 		cout << "... " << tab;
 		if (context.move) {
 			if (!exists(dir)) {
@@ -197,7 +206,7 @@ bool File::move()
 
 				bool skip = file > *this;
 				if (skip) cout << "skipping: " << file << enter;
-				else cerr << *this << tab << "OVERWRITING: " << file << endl;
+				else cerr << "OVERWRITING: " << file << endl;
 				if (skip) return false;
 				else confirm();
 			}
@@ -212,13 +221,13 @@ ostream& operator<<(ostream& os, const File& file)
 {
 	os << file.full() << tab;
 	if (!file) os << "! ";
-	if (!file.make.empty()) os << ' ' << '\'' << file.make << '\'';
+	if (!file.cam.empty()) os << ' ' << '\'' << file.cam << '\'';
 	if (!file.date.empty()) os << ' ' << file.date;
 	os << ' ' << file.size;
 	if (file.res) os << ' ' << file.width << '/' << file.hight;
 	if (file.exif) os << '/' << file.ornt;
 	if (!file) os << tab;
-	if (!file.picture) os << "not JPEG file";
+	if (!file.pic) os << "not JPEG file";
 	else if (!file.exif) os << "no EXIF data";
 	else if (!file.sos) os << "no data stream marker";
 	else if (!file.sub) os << "no original camera IDF data";
@@ -230,67 +239,70 @@ ostream& operator<<(ostream& os, const File& file)
 bool File::operator>(const File& file)
 {
 	if (!*this) return false;
-	if (!file) return true;
-	if (width * hight > file.width * file.hight) return true;
-	if (width * hight < file.width * file.hight) return false;
-	if (ornt > 1 && file.ornt <= 1) return true;
-	if (hight < file.hight) return false;
+	else if (!file) return true;
+	else if (width * hight > file.width * file.hight) return true;
+	else if (width * hight < file.width * file.hight) return false;
+	else if (ornt > 1 && file.ornt <= 1) return true;
+	else if (file.ornt > 1 && ornt <= 1) return false;
+	else if (hight < file.hight) return false;
+	else if (file.hight < hight) return true;
 	for (const auto& key: context.prefer)
 		if (file.path.find(key) != string::npos) return false;
 		else if (path.find(key) != string::npos) return true;
 	for (const auto& key: context.avoid)
 		if (full().find(key) != string::npos) return false;
 		else if (file.full().find(key) != string::npos) return true;
-	for (const auto& key: context.name)
+	for (const auto& key: context.keys)
 		if (file.name.find(key) != string::npos) return false;
 		else if (name.find(key) == string::npos) return true;
 	// if (path.size() > file.path.size()) return true;
 	return size < file.size;
 }
 
-#define IFSTREAM_READ_SIZE(tag, size) { if (!is.read((char*)&(tag), size)) { if (context.verbose) cerr << "Read error @" << is.tellg() << tab; return is; }}
+#define IFSTREAM_READ_SIZE(tag, size) { if (!is.read((char*)&(tag), size)) { if (context.verbose) cerr << "Read error @" << is.tellg() << tab; return; }}
 #define IFSTREAM_READ(tag) IFSTREAM_READ_SIZE(tag, sizeof(tag))
-#define IFSTREAM_SEEK_REF(pos, rel) { if (!(is).seekg((pos), (rel))) { if (context.verbose) cerr << "Seek error @" << (pos) << tab; return is; }}
+#define IFSTREAM_SEEK_REF(pos, rel) { if (!(is).seekg((pos), (rel))) { if (context.verbose) cerr << "Seek error @" << (pos) << tab; return; }}
 #define IFSTREAM_SEEK(pos) IFSTREAM_SEEK_REF(pos, ios::beg)
 #define IFSTREAM_SEEK_REL(pos) IFSTREAM_SEEK_REF(pos, ios::cur)
 #define	DEBUG(text) { if (context.debug) cerr << text; }
 
-ifstream& File::operator<<(ifstream& is)
+void File::operator<<(ifstream& is)
 {
 	struct stat info;
 	stat(full().c_str(), &info);
 	size = info.st_size;
-	char buffer[20];	// YYYY-MM-DD HH:MM:SS = 19 znaków + null
+	char buffer[20];	// YYYY:MM:DD-HH:MM:SS = 19 char + null
 	std::tm tm_date;
 	localtime_r(&info.st_mtime, &tm_date);
 	std::strftime(buffer, sizeof(buffer), "%Y:%m:%d-%H:%M:%S", &tm_date);
 	date = string(buffer);
 	uint16_t tag, size;
-	uint32_t mkof(0), mksize(0);
 	IFSTREAM_READ(tag)
 	if (tag == JPEG) {
 		uint32_t sof(0), ref(0);
-		picture = true;
+		pic = true;
 		DEBUG("APP:");
 		do {
 			auto pos = is.tellg();
 			IFSTREAM_READ(tag)
 			if ((tag & 0xFF) != MARK) break;
+			bool bold = tag == EXIF || tag == SOF;
 			IFSTREAM_READ(size)
 			size = __builtin_bswap16(size);
-			DEBUG(' ' << outhex(__builtin_bswap16(tag)) << '@' << outhex(pos) << (tag == EXIF || tag == SOF? "*": ""))
+			DEBUG(' ' << (bold? bold_on: bold_off) << outhex(__builtin_bswap16(tag)) << '@' << outhex(pos) << bold_off)
 			if (!ref && tag == EXIF) ref = is.tellg();
 			if (tag == SOS) sos = true;
 			if (tag == SOF) sof = is.tellg();
 			IFSTREAM_SEEK_REL(size - sizeof(size))
 		} while (tag != SOS);
 		DEBUG(enter);
-		if (ref) { 
+		if (ref) {
 			char id[4];
 			IFSTREAM_SEEK(ref)
 			IFSTREAM_READ(id);
 			if (!strncmp(id, EXIFID, 4)) {
 				exif = true;
+				uint32_t cof(0), csize(0);
 				IFSTREAM_SEEK_REL(2);
 				char tiff[4] = {};
 				bool swap = false;
@@ -310,14 +322,15 @@ ifstream& File::operator<<(ifstream& is)
 				while(size--) {
 					auto pos = is.tellg();
 					IFSTREAM_READ(tag)
+					bool bold = tag == SIFD || tag == CAM || tag == ORNT;
 					if (swap) tag = __builtin_bswap16(tag);
-					DEBUG(' ' << outhex(tag) << '@' << outhex(pos) << (tag == SIFD? "*": ""))
-					if (tag == MAKE) {
+					DEBUG(' ' << (bold? bold_on: bold_off) << outhex(tag) << '@' << outhex(pos) << bold_off);
+					if (tag == CAM) {
 						IFSTREAM_READ(format);
-						IFSTREAM_READ(mksize);
-						IFSTREAM_READ(mkof);
-						if (swap) mksize = __builtin_bswap32(mksize);
-						if (swap) mkof = __builtin_bswap32(mkof);
+						IFSTREAM_READ(csize);
+						IFSTREAM_READ(cof);
+						if (swap) csize = __builtin_bswap32(csize);
+						if (swap) cof = __builtin_bswap32(cof);
 						continue;
 					}
 					if (tag == ORNT) {
@@ -330,7 +343,7 @@ ifstream& File::operator<<(ifstream& is)
 					}
 					if (tag == SIFD) break;
 					IFSTREAM_SEEK_REL(10)
-				};
+				}
 				DEBUG(enter)
 				if (tag == SIFD) {
 					IFSTREAM_READ(format)
@@ -347,7 +360,8 @@ ifstream& File::operator<<(ifstream& is)
 						auto pos = is.tellg();
 						IFSTREAM_READ(tag)
 						if (swap) tag = __builtin_bswap16(tag);
-						DEBUG(' ' << outhex(tag) << '@' << outhex(pos) << (tag == DATE? "*":""))
+						bool bold = tag == DATE || tag == WIDTH || tag == HIGHT;
+						DEBUG(' ' << (bold? bold_on: bold_off) << outhex(tag) << '@' << outhex(pos))
 						if (tag == DATE) pdate = is.tellg();
 						if (tag == WIDTH) pwidth = is.tellg();
 						if (tag == HIGHT) phight = is.tellg();
@@ -376,16 +390,15 @@ ifstream& File::operator<<(ifstream& is)
 						}
 					}
 				}
+				if (cof) {
+					char model[csize]{};
+					IFSTREAM_SEEK(ref + cof)
+						IFSTREAM_READ(model)
+						cam = model;
+					while (cam.back() == ' ') cam.pop_back();
+					DEBUG(tab << "camera" << '@' << outhex(ref + cof) << ": " << cam << tab)
+				}
 			}
-		}
-
-		if (mkof) {
-			char model[mksize]{};
-			IFSTREAM_SEEK(ref + mkof)
-			IFSTREAM_READ(model)
-			make = model;
-			while (make.back() == ' ') make.pop_back();
-			DEBUG(tab << "camera" << '@' << outhex(ref + mkof) << ": " << make << tab)
 		}
 
 		if (sof) {
@@ -412,6 +425,4 @@ ifstream& File::operator<<(ifstream& is)
 	dir = context.out + '/' + year + '/';
 	if (context.format > context.Format::Year) dir += month + '/';
 	if (context.format > context.Format::Month) dir += day + '/';
-
-	return is;
 }

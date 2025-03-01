@@ -16,15 +16,14 @@ ostream& operator<<(ostream& oss, const Context& context) {
 	oss << ' ';
 	if (context.dirs.front() != context.out)
 		oss << "target directory:" << context.out << ", ";
-	if (context.dups) oss << "save duplicate list, ";
 	if (!context.prefer.empty()) {
 		oss << "prefer:";
 		for (const auto& key: context.prefer) oss << key << ',';
 		oss << ' ';
 	}
-	if (!context.name.empty()) {
+	if (!context.keys.empty()) {
 		oss << "names:";
-		for (const auto& key: context.name) oss << key << ',';
+		for (const auto& key: context.keys) oss << key << ',';
 		oss << ' ';
 	}
 	if (!context.avoid.empty()) {
@@ -33,13 +32,14 @@ ostream& operator<<(ostream& oss, const Context& context) {
 		oss << ' ';
 	}
 	if (context.recurse) oss << "recursive, ";
-	if (context.count > 0) oss << "count:" << context.count << ", ";
+	if (context.count >= 0) oss << "count:" << context.count << ", ";
 	if (context.skip > 0) oss << "skip:" << context.skip << ", ";
+	if (context.dups) oss << "save duplicate list, ";
 	if (context.verbose) {
 		if (context.debug) oss << "debug, ";
 		else oss << "verbose, ";
 	}
-	if (context.sup) oss << "suppress, ";
+	if (context.suppress()) oss << "suppress, ";
 	if (context.confirm) oss << "confirm, ";
 	if (context.move) {
 		oss << "sorting path:/yyyy/";

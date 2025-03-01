@@ -13,6 +13,8 @@
 #define tab '\t'
 #define enter '\n'
 #define clean "\033[2K\r"
+#define bold_on "\e[1m"
+#define bold_off "\e[0m"
 
 bool ldump(const void*, uint, uint = 0);
 bool pdump(const void*, const void*);

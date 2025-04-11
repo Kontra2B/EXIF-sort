@@ -1,6 +1,5 @@
 #pragma once
 #include <ostream>
-#include <vector>
 #include <filesystem>
 
 using TAG = uint16_t;
@@ -47,5 +46,6 @@ struct File {
 	friend std::ostream& operator<<(std::ostream&, const File&);
 	std::string full() const { return path + '/' + name; }
 	std::string target() const { return dir + name; }
+	std::string dump(const File&) const;
 	bool move();
 };

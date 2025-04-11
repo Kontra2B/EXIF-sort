@@ -1,10 +1,10 @@
 #include <iostream>
 #include <cstring>
 #include <variant>
-#include <map>
 #include <list>
 #include <unordered_map>
 #include <sys/stat.h>
+#include <fstream>
 
 #include "helper.hpp"
 #include "context.hpp"
@@ -15,97 +15,49 @@ using namespace filesystem;
 
 Context context;
 
-using option = variant<monostate, int64_t*, string*, list<string>*>;
-
-void set(option* param, char* value) {
-	if (!*value) return;
-	if (auto target = get_if<int64_t*>(param)) **target = strtol(value, nullptr, 0);
-	else if (auto target = get_if<string*>(param)) **target = value;
-	else if (auto target = get_if<list<string>*>(param)) (*target)->push_back(value);
-	*param = monostate{};
-}
-
 int main(int n, char** argv) {
-	bool help(false);
+	Context context;
+	context.parse(n, argv);
 
-	unordered_map<string, list<File>> dups;
-	option pending;
+	if (context.help) cout << argv[0] << R"EOF( *[OPTIONS|DIR]
 
-	for (int i = 1; i < n; i++) {
-		char* arg = argv[i];
-		if (*arg == '-') {
-			pending = monostate{};
-			while (*++arg) {
-				if (*arg == 'h') help = true;
-				else if (*arg == 'R') context.move = true;
-				else if (*arg == 'r') context.recurse = true;
-				else if (*arg == 'c') context.confirm = true;
-				else if (*arg == 'S') context.sup = true;
-				else if (*arg == 'd') context.dups = true;
-				else if (*arg == 'a') context.all = true;
-				else if (*arg == 'Y') context.format = Context::Format::Year;
-				else if (*arg == 'M') context.format = Context::Format::Month;
-				else if (*arg == 'D') context.format = Context::Format::Day;
-				else if (*arg == 'n') pending = &context.count;
-				else if (*arg == 's') pending = &context.skip;
-				else if (*arg == 'i') pending = &context.prefer;
-				else if (*arg == 'x') pending = &context.avoid;
-				else if (*arg == 'f') pending = &context.keys;
-				else if (*arg == 't') pending = &context.out;
-				else if (*arg == 'v') if (context.verbose) context.debug = true; else context.verbose = true;
-				if (pending.index()) {
-					set(&pending, ++arg);
-					break;					// consume remaining chars
-				}
-			}
-		}
-		else if (pending.index()) set(&pending, arg);
-		else {
-			string dir(arg);
-			while (dir.back() == '/') dir.pop_back();
-			context.dirs.push_back(dir);
-		}
-	}
-
-	if (help) cout << argv[0] << R"EOF( [OPTIONS] DIR [DIR]
-
-DIR		working directory
+DIR	working directory
 
 OPTIONS:
--h		display this help message and quit, helpfull to see other argument parsed
--R		move files, dry run otherwise, only across one filesystem
--r		working directories recursive scan
--t		target directory, defaults to first working dir
--a		move all files, otherwise jpeg pictures only
--d		create list of duplicate files
--n		number of files to process
--s		number of files to skip
--v		be verbose, if repeated be more verbose with debug info
--Y		file path under target directory will be altered to /yyyy/
--M		file path under target directory will be altered to /yyyy/mm/
--D		file path under target directory will be altered to /yyyy/mm/dd/
--i		add preferred path key
--x		add void path key
--f		add preferred file name key
--S		suppress output
--c		confirm possible errors
+	no-parameter options can be combined under one leading -
+	space after parameter option may be ommited, parameter is consumed until next space
+-h	display this help message and quit, helpfull to see other arguments parsed
+-R	move files, dry run otherwise, only across one filesystem
+-r	working directories recursive scan
+-t dir	target directory, defaults to first working dir
+-a	move all files, otherwise jpeg pictures only
+-d file	create list of duplicate files, default file: duplicate.file.log
+-n num	number of files to process
+-s num 	number of files to skip
+-v	be verbose, if repeated be more verbose with debug info
+-Y	file path under target directory will be fitted to /yyyy/
+-M	file path under target directory will be fitted to /yyyy/mm/
+-D	file path under target directory will be fitted to /yyyy/mm/dd/
+	according to picture original exif data or modification date
+-i key	add preferred path key
+-x key	add void path key
+-f key	add preferred file name key, name substring
+-S	suppress output
+-c	confirm possible errors
 
 Parsed arguments:
 )EOF" << endl;
 
-	while (context.out.back() == '/') context.out.pop_back();
-	if (context.dirs.empty()) context.dirs.push_back(".");
-	if (context.out.empty()) context.out = context.dirs.front();
-
 	cout << context;
 
-	if (help) exit(EXIT_SUCCESS);
+	if (context.help) exit(EXIT_SUCCESS);
 
 	confirm(context.move);
 
 	using dir_iterator = variant<directory_iterator, recursive_directory_iterator>;
 	dir_iterator it;
 	directory_options opts = directory_options::skip_permission_denied;
+	unordered_map<string, list<File>> dups;
 
 	for (const auto& dir: context.dirs) {
 		if (!context.count) break;
@@ -118,7 +70,7 @@ Parsed arguments:
 			cerr << "Not a directory: " << dir << endl;
 			continue;
 		}
-		visit([&dups](auto&& iter){
+		visit([&dups, &context](auto&& iter){
 			int i = 0;
 			for (auto entry: iter) {
 				if (!entry.is_regular_file()) continue;
@@ -132,21 +84,11 @@ Parsed arguments:
 				file << ifs;		// create file object from disk file
 				cout << file;
 
-				if (file.target() == file.full()) {
-					cout << tab << "on place";
-					if(context.suppress()) cout << clean;
-					else cout << enter;
-					continue;
-				}
-
-				file.move();
-
-				if (!file.pic && !context.all) continue;
-
-				if (context.dups) {
-					auto& list = dups[file.date];
-					auto it = list.begin();
-					while (it != list.end())
+				if (!context.dups.empty())
+					if (file.pic || context.all) {
+						auto& list = dups[file.cam + ':' + file.date];
+						auto it = list.begin();
+						while (it != list.end())
 						if (file > *it) {
 							list.insert(it, file);
 							break;
@@ -154,32 +96,60 @@ Parsed arguments:
 					if (it == list.end())
 						if (!file.pic || file.dat)
 							list.push_back(file);
-				}
+					}
+
+				file.move();
 			}
 		}, it);
 	}
 
-	if (context.dups) {
-		auto date = dups.begin();
-		while (date != dups.end())
-			if (date->second.size() < 2)
-				date = dups.erase(date);
-			else date++;
-		ofstream of("duplicate.files.log");
-		// of << "Duplicate files:" << endl;
-		for (auto& date: dups) {
-			auto it = date.second.cbegin();
-			auto best = *it++;
-			while (it != date.second.end())
-				of << *it++ << tab << '#' << best << endl;
+	if (!context.dups.empty()) {
+		auto entry = dups.begin();
+		while (entry != dups.end())
+			if (entry->second.size() < 2)
+				entry = dups.erase(entry);
+			else entry++;
+		ofstream of(context.dups);
+		for (auto& entry: dups) {
+			auto it = entry.second.cbegin();
+			const auto best = *it++;
+			while (it != entry.second.end())
+				of << it++->dump(best) << endl;
 		}
 	}
 	return 0;
 }
 
+string File::dump(const File& file) const {
+	ostringstream oss;
+	oss << quoted(full()) << tab << '#' << quoted(file.full()) << tab;
+	if (*this ^ file) oss << '!';
+	if (pic ^ file.pic) oss << "/pic";
+	else if (exif ^ file.exif) oss << "/exif";
+	else if (sos ^ file.sos) oss << "/stream";
+	else if (sub ^ file.sub) oss << "/orignal";
+	else if (end ^ file.end) oss << "/end";
+	if (res ^ file.res) oss << "/res";
+	else {
+		if (width != file.width) oss << "width:" << width << '/' << file.width << ", ";
+		if (hight != file.hight) oss << ",height:" << hight << '/' << file.hight << ", ";
+	}
+	if (ornt != file.ornt) oss << "orientation:" << ornt << '/' << file.ornt << ", ";
+	if (size != file.size) oss << "size:" << size << '/' << file.size << ", ";
+	char c;
+	while (c = oss.str().back(), c == ' ' || c == ',') oss.str().pop_back();
+	return std::move(oss.str());
+}
+
 bool File::move()
 {
 	if (pic || context.all) {
+		if (target() == full()) {
+			cout << tab << "on place";
+			if(context.suppress()) cout << clean;
+			else cout << enter;
+			return false;
+		}
 		cout << "... " << tab;
 		if (context.move) {
 			if (!exists(dir)) {
@@ -256,7 +226,9 @@ bool File::operator>(const File& file)
 		if (file.name.find(key) != string::npos) return false;
 		else if (name.find(key) == string::npos) return true;
 	// if (path.size() > file.path.size()) return true;
-	return size < file.size;
+	if (size < file.size) return true;
+	else if (size > file.size) return false;
+	else return path.length() < file.path.length();
 }
 
 #define IFSTREAM_READ_SIZE(tag, size) { if (!is.read((char*)&(tag), size)) { if (context.verbose) cerr << "Read error @" << is.tellg() << tab; return; }}
@@ -391,7 +363,7 @@ void File::operator<<(ifstream& is)
 					}
 				}
 				if (cof) {
-					char model[csize]{};
+					char model[csize];
 					IFSTREAM_SEEK(ref + cof)
 						IFSTREAM_READ(model)
 						cam = model;
@@ -423,6 +395,6 @@ void File::operator<<(ifstream& is)
 	getline(iss, day, '-');
 
 	dir = context.out + '/' + year + '/';
-	if (context.format > context.Format::Year) dir += month + '/';
-	if (context.format > context.Format::Month) dir += day + '/';
+	if (context.format > Context::Format::Year) dir += month + '/';
+	if (context.format > Context::Format::Month) dir += day + '/';
 }

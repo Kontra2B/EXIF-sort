@@ -16,7 +16,6 @@ using namespace filesystem;
 Context context;
 
 int main(int n, char** argv) {
-	Context context;
 	context.parse(n, argv);
 
 	if (context.help) cout << argv[0] << R"EOF( *[OPTIONS|DIR]
@@ -35,13 +34,14 @@ OPTIONS:
 -n num	number of files to process
 -s num 	number of files to skip
 -v	be verbose, if repeated be more verbose with debug info
+-N	file path under target directory will be removed
 -Y	file path under target directory will be fitted to /yyyy/
 -M	file path under target directory will be fitted to /yyyy/mm/
 -D	file path under target directory will be fitted to /yyyy/mm/dd/
-	according to picture original exif data or modification date
--i key	add preferred path key
--x key	add void path key
--f key	add preferred file name key, name substring
+	according to picture original exif or modification date
+-i key	add preferred path key, any fixed substring
+-x key	add void path key, any fixed substring
+-f key	add preferred file name key, any fixed substring
 -S	suppress output
 -c	confirm possible errors
 
@@ -70,7 +70,7 @@ Parsed arguments:
 			cerr << "Not a directory: " << dir << endl;
 			continue;
 		}
-		visit([&dups, &context](auto&& iter){
+		visit([&dups](auto&& iter){
 			int i = 0;
 			for (auto entry: iter) {
 				if (!entry.is_regular_file()) continue;
@@ -394,7 +394,8 @@ void File::operator<<(ifstream& is)
 	getline(iss, month, ':');
 	getline(iss, day, '-');
 
-	dir = context.out + '/' + year + '/';
+	dir = context.out + '/';
+	if (context.format > Context::Format::None) dir += year + '/';
 	if (context.format > Context::Format::Year) dir += month + '/';
 	if (context.format > Context::Format::Month) dir += day + '/';
 }

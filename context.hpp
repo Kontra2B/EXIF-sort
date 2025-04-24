@@ -6,7 +6,7 @@
 using option = std::variant<std::monostate, int64_t*, std::string*, std::list<std::string>*>;
 
 struct Context {
-	enum class Format	{ Year, Month, Day };
+	enum class Format	{ None, Year, Month, Day };
 	std::list<std::string>	dirs, prefer, avoid, keys;
 	std::string			out, dups;				// recovery working an move target directory
 	int64_t				count, skip;			// counters for limited output

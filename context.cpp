@@ -13,6 +13,7 @@ ostream& operator<<(ostream& oss, const Context& context) {
 	oss << "Working director" << (context.dirs.size() < 2? "y": "ies") << '[';
 	for (const auto& dir: context.dirs) oss << dir << ",";
 	oss << "\b] ";
+	if (context.recurse) oss << "recursive, ";
 	if (context.dirs.front() != context.out)
 		oss << "target directory:" << context.out << ", ";
 	if (!context.prefer.empty()) {
@@ -32,7 +33,6 @@ ostream& operator<<(ostream& oss, const Context& context) {
 	}
 	if (context.count >= 0) oss << "count:" << context.count << ", ";
 	if (context.skip > 0) oss << "skip:" << context.skip << ", ";
-	if (context.recurse) oss << "recursive, ";
 	if (context.verbose) {
 		if (context.debug) oss << "debug, ";
 		else oss << "verbose, ";
@@ -40,10 +40,13 @@ ostream& operator<<(ostream& oss, const Context& context) {
 	if (context.suppress()) oss << "suppress, ";
 	if (context.confirm) oss << "confirm, ";
 	if (!context.dups.empty()) oss << "duplicates:" << context.dups << ", ";
-	if (true || context.move) {
-		oss << "sorting:/yyyy/";
-		if (context.format > Context::Format::Year) oss << "mm/";
-		if (context.format > Context::Format::Month) oss << "dd/";
+	if (context.help || context.move) {
+		if (context.format == Context::Format::None) oss << "remove path";
+		else {
+			oss << "sorting:/yyyy/";
+			if (context.format > Context::Format::Year) oss << "mm/";
+			if (context.format > Context::Format::Month) oss << "dd/";
+		}
 		oss << ", ";
 	}
 	oss << "pid:" << getpid() << endl;
@@ -76,6 +79,7 @@ void Context::parse(int argn, char** argv)
 				else if (*arg == 'c') confirm = true;
 				else if (*arg == 'S') sup = true;
 				else if (*arg == 'a') all = true;
+				else if (*arg == 'N') format = Context::Format::None;
 				else if (*arg == 'Y') format = Context::Format::Year;
 				else if (*arg == 'M') format = Context::Format::Month;
 				else if (*arg == 'D') format = Context::Format::Day;

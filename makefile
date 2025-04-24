@@ -12,7 +12,7 @@ all: exif.sort
 	$(CC) $(CFLAGS) -c $< -o $@
 
 exif.sort: $(OBJ)
-	$(CC) $^ -o $@
+	$(CC) $(CFLAGS) $^ -o $@
 
 debug: CFLAGS = -ggdb3 -o0
 debug: exif.sort

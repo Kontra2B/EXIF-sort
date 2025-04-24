@@ -35,13 +35,14 @@ OPTIONS:
 -s num 	number of files to skip
 -v	be verbose, if repeated be more verbose with debug info
 -N	file path under target directory will be removed
--Y	file path under target directory will be fitted to /yyyy/
--M	file path under target directory will be fitted to /yyyy/mm/
--D	file path under target directory will be fitted to /yyyy/mm/dd/
-	according to picture original exif or modification date
--i key	add preferred path key, any fixed substring
--x key	add void path key, any fixed substring
--f key	add preferred file name key, any fixed substring
+-Y	file path under target directory will be fitted to /yyyy/...
+-M	file path under target directory will be fitted to /yyyy/mm/... default
+-D	file path under target directory will be fitted to /yyyy/mm/dd/...
+	... based on picture original EXIF or modification date
+-i key	add preferred path key...
+-x key	add void path key...
+-f key	add preferred file name key...
+	... key is any fixed substring
 -S	suppress output
 -c	confirm possible errors
 
@@ -202,7 +203,7 @@ ostream& operator<<(ostream& os, const File& file)
 	else if (!file.sos) os << "no data stream marker";
 	else if (!file.sub) os << "no original camera IDF data";
 	else if (file.date.empty()) os << "no original date";
-	else if (!file.end) os << "bad END TAG";
+	else if (!file.end) os << "bad END tag";
 	return os;
 }
 

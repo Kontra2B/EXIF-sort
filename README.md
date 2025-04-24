@@ -1,4 +1,5 @@
-A linux tool to distribute pictures based on original EXIF date and to find duplicates based on the date.
+A linux tool to distribute pictures based on original EXIF date and to find duplicates based on the date.\
+When moving files some logic makes assertions about overwriting target file.
 
 To build run `git clone git@github.com:Kontra2B/EXIF-sort.git`\
 Enter checked folder with `cd EXIF-sort` and run `make`.

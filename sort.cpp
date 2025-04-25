@@ -18,7 +18,7 @@ Context context;
 int main(int n, char** argv) {
 	context.parse(n, argv);
 
-	if (context.help) cout << argv[0] << R"EOF( *[OPTIONS|DIR]
+	if (context.help) cout << argv[0] << R"EOF( [OPTIONS|DIR] [OPTIONS|DIR] ...
 
 DIR	working directory
 
@@ -31,8 +31,8 @@ OPTIONS:
 -t dir	target directory, defaults to first working dir
 -a	move all files, otherwise jpeg pictures only
 -d file	create list of duplicate files, default file: duplicate.file.log
--n num	number of files to process
 -s num 	number of files to skip
+-n num	number of files to process
 -v	be verbose, if repeated be more verbose with debug info
 -N	file path under target directory will be removed
 -Y	file path under target directory will be fitted to /yyyy/...
@@ -50,7 +50,6 @@ Parsed arguments:
 )EOF" << endl;
 
 	cout << context;
-
 	if (context.help) exit(EXIT_SUCCESS);
 
 	confirm(context.move);

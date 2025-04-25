@@ -60,7 +60,7 @@ string& lower(string& text) {
 
 void confirm(bool cond) {
     if (!Context::confirm && !cond) return;
-    cerr << "Press ENTER to continue...";
+    cerr << "\tPress ENTER to continue...\n";
     cin.get();
     cerr << clean;
 }

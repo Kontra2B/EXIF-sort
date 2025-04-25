@@ -14,7 +14,7 @@ ostream& operator<<(ostream& oss, const Context& context) {
 	for (const auto& dir: context.dirs) oss << dir << ",";
 	oss << "\b] ";
 	if (context.recurse) oss << "recursive, ";
-	if (context.dirs.front() != context.out)
+	if (!context.move && context.dirs.front() != context.out)
 		oss << "target directory:" << context.out << ", ";
 	if (!context.prefer.empty()) {
 		oss << "prefer[";
@@ -50,7 +50,9 @@ ostream& operator<<(ostream& oss, const Context& context) {
 		oss << ", ";
 	}
 	oss << "pid:" << getpid() << endl;
-	if (context.move) oss << "MOVING files: " << (context.all? "all": "pictures") << endl;
+	if (context.move)
+		oss << "MOVING " << (context.all? "all files": "pictures")
+			<< " to target directory: " << context.out << endl;
 	return oss << endl;
 }
 
@@ -97,7 +99,7 @@ void Context::parse(int argn, char** argv)
 				}
 				if (pending.index()) {
 					set(&pending, ++arg);
-					break;					// consume remaining chars
+					break;				// consume remaining chars
 				}
 			}
 		}

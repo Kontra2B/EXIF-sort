@@ -6,7 +6,7 @@ Enter checked folder with `cd EXIF-sort` and run `make`.
 
 For help run: `./exif.sort -h`\
 Example of picture re-distribution in the current folder based on original picture EXIF year/month (default):\
-`> exif.sort -rR`
+`> ./exif.sort -rR`
 ```
 Working directory[.] recursive, sorting:/yyyy/mm/, pid:2302352
 MOVING files: pictures

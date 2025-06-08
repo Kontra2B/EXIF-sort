@@ -6,13 +6,15 @@ To build run
 git clone git@github.com:Kontra2B/EXIF-sort.git
 cd EXIF-sort
 make
+make install
 ```
 
-For help run: `./exif.sort -h`\
+Installs to $HOME/.local/bin/ that should be in your $PATH. Otherwise use full path to exif.sort.\
+For help run: `exif.sort -h`\
 Example of picture re-distribution in the current folder based on original picture EXIF year/month (default):\
-`> ./exif.sort -rR`
+`> exif.sort -rR`
 ```
-Working directory[.] recursive, sorting:/yyyy/mm/, pid:2302352
+Working directory[.] recursive, sort:/yyyy/mm/, pid:2302352
 MOVING files: pictures
 
   Press ENTER to continue...

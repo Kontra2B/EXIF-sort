@@ -43,7 +43,7 @@ ostream& operator<<(ostream& oss, const Context& context) {
 	if (context.help || context.move) {
 		if (context.format == Context::Format::None) oss << "remove path";
 		else {
-			oss << "sorting:/yyyy/";
+			oss << "sort:/yyyy/";
 			if (context.format > Context::Format::Year) oss << "mm/";
 			if (context.format > Context::Format::Month) oss << "dd/";
 		}

@@ -14,7 +14,7 @@ ostream& operator<<(ostream& oss, const Context& context) {
 	for (const auto& dir: context.dirs) oss << dir << ",";
 	oss << "\b] ";
 	if (context.recurse) oss << "recursive, ";
-	if (!context.move && context.dirs.front() != context.out)
+	if (context.dryrun())
 		oss << "target directory:" << context.out << ", ";
 	if (!context.prefer.empty()) {
 		oss << "prefer[";
@@ -40,7 +40,7 @@ ostream& operator<<(ostream& oss, const Context& context) {
 	if (context.suppress()) oss << "suppress, ";
 	if (context.confirm) oss << "confirm, ";
 	if (!context.dups.empty()) oss << "duplicates:" << context.dups << ", ";
-	if (context.help || context.move) {
+	if (context.help || !context.dryrun()) {
 		if (context.format == Context::Format::None) oss << "remove path";
 		else {
 			oss << "sort:/yyyy/";
@@ -50,9 +50,13 @@ ostream& operator<<(ostream& oss, const Context& context) {
 		oss << ", ";
 	}
 	oss << "pid:" << getpid() << endl;
-	if (context.move)
-		oss << "MOVING " << (context.all? "all files": "pictures")
+	if (!context.dryrun()) {
+		if (context.move()) oss << "MOVING";
+		else if (context.hard()) oss << "HARD linking";
+		else if (context.soft()) oss << "SOFT linking";
+		oss << ' ' << (context.all? "all files": "pictures")
 			<< " to target directory: " << context.out << endl;
+	}
 	return oss << endl;
 }
 
@@ -76,7 +80,9 @@ void Context::parse(int argn, char** argv)
 			while (*++arg) {
 				// no-parameter options
 				if (*arg == 'h') help = true;
-				else if (*arg == 'R') move = true;
+				else if (*arg == 'R') action = Action::Move;
+				else if (*arg == 'L') action = Action::Hard;
+				else if (*arg == 'l') action = Action::Soft;
 				else if (*arg == 'r') recurse = true;
 				else if (*arg == 'c') confirm = true;
 				else if (*arg == 'S') sup = true;
@@ -118,7 +124,8 @@ void Context::parse(int argn, char** argv)
 
 Context::Context()
 {
-	move = recurse = verbose = debug = confirm = force = sup = all = help = false;
+	action = Action::None;
+	recurse = verbose = debug = confirm = force = sup = all = help = false;
 	format = Context::Format::Month;
 	count = -1L;
 	skip = 0;

@@ -27,6 +27,8 @@ OPTIONS:
 	space after parameter option may be ommited, parameter is consumed until next space
 -h	display this help message and quit, helpfull to see other arguments parsed
 -R	move files, dry run otherwise, only across one filesystem
+-L	create hard links instead of move
+-l	create soft links instead of move
 -r	working directories recursive scan
 -t dir	target directory, defaults to first working dir
 -a	move all files, otherwise jpeg pictures only
@@ -52,11 +54,11 @@ Parsed arguments:
 	cout << context;
 	if (context.help) exit(EXIT_SUCCESS);
 
-	confirm(context.move);
+	confirm(!context.dryrun());
 
 	using dir_iterator = variant<directory_iterator, recursive_directory_iterator>;
 	dir_iterator it;
-	directory_options opts = directory_options::skip_permission_denied;
+	directory_options opts = directory_options::skip_permission_denied | directory_options::follow_directory_symlink;
 	unordered_map<string, list<File>> dups;
 
 	for (const auto& dir: context.dirs) {
@@ -73,7 +75,8 @@ Parsed arguments:
 		visit([&dups](auto&& iter){
 			int i = 0;
 			for (auto entry: iter) {
-				if (!entry.is_regular_file()) continue;
+				if (!entry.is_regular_file()
+						|| entry.is_symlink()) continue;
 				i++;
 				if (context.skip && context.skip--) continue;
 				if (!context.count || !context.count--) break;
@@ -98,7 +101,7 @@ Parsed arguments:
 							list.push_back(file);
 					}
 
-				file.move();
+				file.commit();
 			}
 		}, it);
 	}
@@ -122,7 +125,7 @@ Parsed arguments:
 
 string File::dump(const File& file) const {
 	ostringstream oss;
-	oss << quoted(full()) << tab << '#' << quoted(file.full()) << tab;
+	oss << quoted(full().native()) << tab << '#' << quoted(file.full().native()) << tab;
 	if (*this ^ file) oss << '!';
 	if (pic ^ file.pic) oss << "/pic";
 	else if (exif ^ file.exif) oss << "/exif";
@@ -141,7 +144,7 @@ string File::dump(const File& file) const {
 	return std::move(oss.str());
 }
 
-bool File::move()
+bool File::commit()
 {
 	if (pic || context.all) {
 		if (target() == full()) {
@@ -151,9 +154,9 @@ bool File::move()
 			return false;
 		}
 		cout << "... " << tab;
-		if (context.move) {
+		if (!context.dryrun()) {
 			if (!exists(dir)) {
-				if (context.verbose || context.confirm) cerr << "Creating file target directory: " << dir << endl;
+				if (context.verbose || context.confirm) cerr << "Creating target directory: " << dir << endl;
 				confirm();
 				if (!filesystem::create_directories(dir)) {
 					if (errno != 17) {
@@ -176,15 +179,28 @@ bool File::move()
 
 				bool skip = file > *this;
 				if (skip) cout << "skipping: " << file << enter;
-				else cerr << "OVERWRITING: " << file << endl;
+				else if(context.move()) cerr << "OVERWRITING: " << file << endl;
 				if (skip) return false;
 				else confirm();
 			}
-			rename(full(), target());
+			if (context.move()) rename(full(), target());
+			else if (context.hard()) try {
+				create_hard_link(full(), target());
+			} catch (...) {
+				remove(target());
+				create_hard_link(full(), target());
+			}
+			else if (context.soft()) try {
+				create_symlink(full().lexically_relative(target().parent_path()), target());
+			} catch (...) {
+				remove(target());
+				cerr << "Replacing existing link: ";
+				create_symlink(full().lexically_relative(target().parent_path()), target());
+			}
 		}
 		cout << target() << enter;
 	} else cout << enter;
-	return context.move;
+	return !context.dryrun();
 }
 
 ostream& operator<<(ostream& os, const File& file)
@@ -217,18 +233,18 @@ bool File::operator>(const File& file)
 	else if (hight < file.hight) return false;
 	else if (file.hight < hight) return true;
 	for (const auto& key: context.prefer)
-		if (file.path.find(key) != string::npos) return false;
-		else if (path.find(key) != string::npos) return true;
+		if (file.path.native().find(key) != string::npos) return false;
+		else if (path.native().find(key) != string::npos) return true;
 	for (const auto& key: context.avoid)
-		if (full().find(key) != string::npos) return false;
-		else if (file.full().find(key) != string::npos) return true;
+		if (full().native().find(key) != string::npos) return false;
+		else if (file.full().native().find(key) != string::npos) return true;
 	for (const auto& key: context.keys)
-		if (file.name.find(key) != string::npos) return false;
-		else if (name.find(key) == string::npos) return true;
+		if (file.name.native().find(key) != string::npos) return false;
+		else if (name.native().find(key) == string::npos) return true;
 	// if (path.size() > file.path.size()) return true;
 	if (size < file.size) return true;
 	else if (size > file.size) return false;
-	else return path.length() < file.path.length();
+	else return path.native().length() < file.path.native().length();
 }
 
 #define IFSTREAM_READ_SIZE(tag, size) { if (!is.read((char*)&(tag), size)) { if (context.verbose) cerr << "Read error @" << is.tellg() << tab; return; }}

@@ -24,7 +24,8 @@ const char EXIFID[] = "Exif";
 
 struct File {
 	bool pic, exif, sos, sub, dat, res, end;
-	std::string name, path, dir, date, cam;
+	std::filesystem::path name, path, dir;
+	std::string date, cam;
 	std::string year, month, day;
 	uint32_t size;
 	uint16_t hight, width, ornt;
@@ -35,7 +36,7 @@ struct File {
 			&& strtol(year.c_str(), NULL, 10)
 			&& strtol(month.c_str(), NULL, 10)
 			&& strtol(day.c_str(), NULL, 10);
-	};
+	}
 	File(const std::filesystem::path& entry) {
 		pic = exif = sos = sub = end = dat = res = false;
 		size = width = hight = ornt = 0;
@@ -44,8 +45,8 @@ struct File {
 	}
 	bool operator>(const File&);
 	friend std::ostream& operator<<(std::ostream&, const File&);
-	std::string full() const { return path + '/' + name; }
-	std::string target() const { return dir + name; }
+	std::filesystem::path full() const { return path / name; }
+	std::filesystem::path target() const { return dir / name; }
 	std::string dump(const File&) const;
-	bool move();
+	bool commit();
 };
